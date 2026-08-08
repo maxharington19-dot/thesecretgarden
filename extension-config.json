@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "updated": "2026-08-08",
+  "note": "Remote behavior config for the Secret Garden extension. Edit and commit to deploy new rules to all installed extensions within ~30 min. No reinstall needed unless permissions or code change.",
+  "popupBlockPatterns": [
+    "autoembed",
+    "vidsrc",
+    "cloudnestra",
+    "2embed",
+    "yesmovies",
+    "player4u",
+    "vidlink"
+  ],
+  "headerRules": [
+    {
+      "urlFilter": "*.m3u8*",
+      "origin": "https://cloudorchestranova.com",
+      "referer": "https://cloudorchestranova.com/",
+      "resourceTypes": ["media", "xmlhttprequest", "other"]
+    },
+    {
+      "urlFilter": "*/content/*page-*.html*",
+      "origin": "https://cloudorchestranova.com",
+      "referer": "https://cloudorchestranova.com/",
+      "resourceTypes": ["media", "xmlhttprequest", "other"]
+    }
+  ]
+}
