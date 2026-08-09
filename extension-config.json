@@ -1,7 +1,7 @@
 {
-  "version": 3,
-  "updated": "2026-08-08",
-  "note": "Remote behavior config for the Secret Garden extension. Edit and commit to deploy new rules to all installed extensions within ~30 min. No reinstall needed unless permissions or code change. Proven-good CDN header set is Referer-only with the Origin removed (segments 403 when a browser Origin is present).",
+  "version": 5,
+  "updated": "2026-08-09",
+  "note": "Remote behavior config. Proven-good against the live CDN (origin-probe 2026-08-09): SETTING Origin+Referer to cloudorchestranova.com returns 200. We SET rather than remove the Origin because Chrome DNR reliably supports set (remove on Origin can be rejected, which silently disables the whole rule set). Works on every extension version >= 2.0.0, so no reinstall needed for rule changes.",
   "popupBlockPatterns": [
     "vidsrcme",
     "vidsrc",
@@ -15,25 +15,20 @@
   "headerRules": [
     {
       "urlFilter": "*.m3u8*",
-      "removeOrigin": true,
+      "origin": "https://cloudorchestranova.com",
       "referer": "https://cloudorchestranova.com/",
       "resourceTypes": ["media", "xmlhttprequest", "other"]
     },
     {
       "urlFilter": "*/content/*",
-      "removeOrigin": true,
+      "origin": "https://cloudorchestranova.com",
       "referer": "https://cloudorchestranova.com/",
       "resourceTypes": ["media", "xmlhttprequest", "other"]
     },
     {
       "urlFilter": "*/generate.php*",
-      "removeOrigin": true,
+      "origin": "https://cloudorchestranova.com",
       "referer": "https://cloudorchestranova.com/",
-      "resourceTypes": ["xmlhttprequest", "other"]
-    },
-    {
-      "urlFilter": "*api.opensubtitles.com*",
-      "userAgent": "secret-garden v1",
       "resourceTypes": ["xmlhttprequest", "other"]
     }
   ]

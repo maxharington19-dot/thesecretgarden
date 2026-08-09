@@ -95,13 +95,26 @@ function toDnrRule(hr, i) {
 async function applyHeaderRules(headerRules) {
   const existing = await chrome.declarativeNetRequest.getDynamicRules();
   const removeRuleIds = existing.map((r) => r.id);
-  const addRules = [];
+  const built = [];
   headerRules.forEach((hr, i) => {
-    try { addRules.push(toDnrRule(hr, i)); }
+    try { built.push(toDnrRule(hr, i)); }
     catch (e) { console.warn("[secret-garden] skipped bad rule", i, e.message); }
   });
-  await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules });
-  console.log("[secret-garden] applied " + addRules.length + " header rule(s)");
+  try {
+    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules: built });
+    console.log("[secret-garden] applied " + built.length + " header rule(s)");
+  } catch (e) {
+    // A single rule Chrome rejects aborts the whole batch, silently disabling ALL rules.
+    // Fall back to applying one at a time so the valid rules still take effect.
+    console.warn("[secret-garden] batch rejected (" + e.message + "); applying individually");
+    try { await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules: [] }); } catch (e0) {}
+    let ok = 0;
+    for (const rule of built) {
+      try { await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [], addRules: [rule] }); ok++; }
+      catch (e2) { console.warn("[secret-garden] rule " + rule.id + " rejected: " + e2.message); }
+    }
+    console.log("[secret-garden] applied " + ok + "/" + built.length + " header rule(s) individually");
+  }
 }
 
 // ---------- popup blocking (patterns come from config) ----------
