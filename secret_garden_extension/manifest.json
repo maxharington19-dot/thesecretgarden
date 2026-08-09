@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Secret Garden Extension",
-  "version": "2.2.0",
-  "description": "Enables the secret garden to work (blocks popups) and pulls its rules from a remote config so behavior updates without reinstalling. v2.2.0 is a generic, self-updating shell: any future header rule is expressed in the remote JSON, so no more reinstalls.",
+  "version": "2.3.0",
+  "description": "Enables the secret garden to work (blocks popups) and pulls its rules from a remote config so behavior updates without reinstalling. Generic, self-updating shell: any future header rule is expressed in the remote JSON, so no more reinstalls. Reports its version to the page so the site can gate out stale copies.",
   "permissions": [
     "scripting",
     "tabs",

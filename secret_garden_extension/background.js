@@ -18,6 +18,9 @@ const SITE_MATCH = "maxharington19-dot.github.io/thesecretgarden";
 const STORAGE_KEY = "sg_config";
 const REFRESH_ALARM = "sg-config-refresh";
 const DNR_RULE_BASE = 1000; // dynamic header-rewrite rules live at 1000+
+const LOG_KEY = "sg_log";       // rolling debug log, persisted so it survives SW restarts
+const STATUS_KEY = "sg_status"; // last rule-apply status, read by worker/ext-logs.mjs over CDP
+const LOG_MAX = 300;
 
 // Bundled fallback so the extension works on first run before the first fetch,
 // and if the site is ever unreachable. Kept intentionally small.
@@ -34,25 +37,41 @@ async function getStoredConfig() {
   return stored[STORAGE_KEY] || DEFAULT_CONFIG;
 }
 
+// Persist a line to the console AND to chrome.storage.local. The stored buffer is
+// what worker/ext-logs.mjs reads over CDP, so debugging needs no manual trip to the
+// service-worker console.
+async function log(msg) {
+  console.log("[secret-garden] " + msg);
+  try {
+    const s = await chrome.storage.local.get(LOG_KEY);
+    const arr = s[LOG_KEY] || [];
+    arr.push({ t: Date.now(), msg });
+    while (arr.length > LOG_MAX) arr.shift();
+    await chrome.storage.local.set({ [LOG_KEY]: arr });
+  } catch (e) {}
+}
+
 function isValidConfig(cfg) {
   return cfg && typeof cfg === "object" && Array.isArray(cfg.headerRules);
 }
 
 async function fetchAndApplyConfig() {
-  let cfg;
+  let cfg, source;
   try {
     const res = await fetch(CONFIG_URL, { cache: "no-cache" });
     if (!res.ok) throw new Error("HTTP " + res.status);
     const parsed = await res.json();
     if (!isValidConfig(parsed)) throw new Error("invalid config shape");
     cfg = parsed;
+    source = "network";
     await chrome.storage.local.set({ [STORAGE_KEY]: cfg });
-    console.log("[secret-garden] config v" + cfg.version + " fetched and stored");
+    await log("config v" + cfg.version + " fetched and stored");
   } catch (e) {
     cfg = await getStoredConfig();
-    console.warn("[secret-garden] config fetch failed (" + e.message + "), using cached v" + cfg.version);
+    source = "cache";
+    await log("config fetch failed (" + e.message + "), using cached v" + cfg.version);
   }
-  await applyHeaderRules(cfg.headerRules || []);
+  await applyHeaderRules(cfg.headerRules || [], { version: cfg.version, source });
   return cfg;
 }
 
@@ -92,29 +111,50 @@ function toDnrRule(hr, i) {
 }
 
 // Turn config headerRules into DNR dynamic rules and swap them in atomically.
-async function applyHeaderRules(headerRules) {
+// meta = { version, source } is recorded into STATUS_KEY so the CDP harness can read
+// exactly what happened without the service-worker console.
+async function applyHeaderRules(headerRules, meta = {}) {
   const existing = await chrome.declarativeNetRequest.getDynamicRules();
   const removeRuleIds = existing.map((r) => r.id);
   const built = [];
+  const errors = [];
   headerRules.forEach((hr, i) => {
     try { built.push(toDnrRule(hr, i)); }
-    catch (e) { console.warn("[secret-garden] skipped bad rule", i, e.message); }
+    catch (e) { errors.push("build rule " + i + ": " + e.message); }
   });
+  let appliedCount = 0;
+  let mode = "batch";
   try {
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules: built });
-    console.log("[secret-garden] applied " + built.length + " header rule(s)");
+    appliedCount = built.length;
+    await log("applied " + appliedCount + " header rule(s)");
   } catch (e) {
     // A single rule Chrome rejects aborts the whole batch, silently disabling ALL rules.
     // Fall back to applying one at a time so the valid rules still take effect.
-    console.warn("[secret-garden] batch rejected (" + e.message + "); applying individually");
+    mode = "individual";
+    errors.push("batch rejected: " + e.message);
+    await log("batch rejected (" + e.message + "); applying individually");
     try { await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules: [] }); } catch (e0) {}
-    let ok = 0;
     for (const rule of built) {
-      try { await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [], addRules: [rule] }); ok++; }
-      catch (e2) { console.warn("[secret-garden] rule " + rule.id + " rejected: " + e2.message); }
+      try { await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [], addRules: [rule] }); appliedCount++; }
+      catch (e2) { errors.push("rule " + rule.id + " rejected: " + e2.message); }
     }
-    console.log("[secret-garden] applied " + ok + "/" + built.length + " header rule(s) individually");
+    await log("applied " + appliedCount + "/" + built.length + " header rule(s) individually");
   }
+  try {
+    const active = await chrome.declarativeNetRequest.getDynamicRules();
+    await chrome.storage.local.set({ [STATUS_KEY]: {
+      ts: Date.now(),
+      configVersion: meta.version ?? null,
+      configSource: meta.source ?? null,
+      builtCount: built.length,
+      appliedCount,
+      mode,
+      errors,
+      activeRuleIds: active.map((r) => r.id),
+      activeRules: active,
+    } });
+  } catch (e) {}
 }
 
 // ---------- popup blocking (patterns come from config) ----------
