@@ -1,10 +1,11 @@
 {
-  "version": 1,
+  "version": 3,
   "updated": "2026-08-08",
-  "note": "Remote behavior config for the Secret Garden extension. Edit and commit to deploy new rules to all installed extensions within ~30 min. No reinstall needed unless permissions or code change.",
+  "note": "Remote behavior config for the Secret Garden extension. Edit and commit to deploy new rules to all installed extensions within ~30 min. No reinstall needed unless permissions or code change. Proven-good CDN header set is Referer-only with the Origin removed (segments 403 when a browser Origin is present).",
   "popupBlockPatterns": [
-    "autoembed",
+    "vidsrcme",
     "vidsrc",
+    "autoembed",
     "cloudnestra",
     "2embed",
     "yesmovies",
@@ -14,15 +15,26 @@
   "headerRules": [
     {
       "urlFilter": "*.m3u8*",
-      "origin": "https://cloudorchestranova.com",
+      "removeOrigin": true,
       "referer": "https://cloudorchestranova.com/",
       "resourceTypes": ["media", "xmlhttprequest", "other"]
     },
     {
-      "urlFilter": "*/content/*page-*.html*",
-      "origin": "https://cloudorchestranova.com",
+      "urlFilter": "*/content/*",
+      "removeOrigin": true,
       "referer": "https://cloudorchestranova.com/",
       "resourceTypes": ["media", "xmlhttprequest", "other"]
+    },
+    {
+      "urlFilter": "*/generate.php*",
+      "removeOrigin": true,
+      "referer": "https://cloudorchestranova.com/",
+      "resourceTypes": ["xmlhttprequest", "other"]
+    },
+    {
+      "urlFilter": "*api.opensubtitles.com*",
+      "userAgent": "secret-garden v1",
+      "resourceTypes": ["xmlhttprequest", "other"]
     }
   ]
 }

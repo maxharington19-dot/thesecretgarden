@@ -82,6 +82,12 @@ async function applyHeaderRules(headerRules) {
     if (hr.referer) {
       requestHeaders.push({ header: "referer", operation: "set", value: hr.referer });
     }
+    if (hr.removeOrigin) {
+      requestHeaders.push({ header: "origin", operation: "remove" });
+    }
+    if (hr.userAgent) {
+      requestHeaders.push({ header: "user-agent", operation: "set", value: hr.userAgent });
+    }
     return {
       id: DNR_RULE_BASE + i,
       priority: 1,
