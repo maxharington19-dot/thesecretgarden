@@ -1,7 +1,7 @@
 {
-  "version": 7,
-  "updated": "2026-09-12",
-  "note": "Remote behavior config. vidsrcme CDN: SETTING Origin+Referer to cloudorchestranova.com returns 200 (origin-probe 2026-08-09). SuperEmbed CDN (hutro433fil.com): SETTING Referer to https://streamingnow.mov/ returns 200 from any IP (server-side replay test 2026-09-05); its rule is priority 2 so it overrides the generic *.m3u8* rule (priority 1) on SuperEmbed manifests. We SET rather than remove headers because Chrome DNR reliably supports set (remove can be rejected, silently disabling the rule set). Works on every extension version >= 2.0.0, so no reinstall needed for rule changes.",
+  "version": 5,
+  "updated": "2026-08-09",
+  "note": "Remote behavior config. Proven-good against the live CDN (origin-probe 2026-08-09): SETTING Origin+Referer to cloudorchestranova.com returns 200. We SET rather than remove the Origin because Chrome DNR reliably supports set (remove on Origin can be rejected, which silently disables the whole rule set). Works on every extension version >= 2.0.0, so no reinstall needed for rule changes.",
   "popupBlockPatterns": [
     "vidsrcme",
     "vidsrc",
@@ -13,20 +13,6 @@
     "vidlink"
   ],
   "headerRules": [
-    {
-      "requestDomains": ["hutro433fil.com", "gufin435siv.com"],
-      "origin": "https://streamingnow.mov",
-      "referer": "https://streamingnow.mov/",
-      "resourceTypes": ["media", "xmlhttprequest", "other"],
-      "priority": 2
-    },
-    {
-      "requestDomains": ["niramirus.com", "streamwish.to"],
-      "origin": "https://streamingnow.mov",
-      "referer": "https://streamingnow.mov/",
-      "resourceTypes": ["xmlhttprequest", "other"],
-      "priority": 2
-    },
     {
       "urlFilter": "*.m3u8*",
       "origin": "https://cloudorchestranova.com",
