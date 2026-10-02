@@ -22,3 +22,23 @@ if (document.readyState === 'loading') {
 document.addEventListener('checkExtensionPresent', () => {
   window.dispatchEvent(new CustomEvent('extensionPresent', { detail: { version: VERSION } }));
 });
+
+// Relay between the page and the background worker. The page posts { __sg, dir:'req', reqId, type,
+// payload }; we forward it to chrome.runtime and post the reply back as { __sg, dir:'res', reqId,
+// resp }. Used so the page can ask the worker to run the Referer-gated SuperEmbed resolve chain it
+// cannot run itself. postMessage (not CustomEvent) so the clone crosses the isolated world on every
+// browser. See background.js (sg-resolve) and site/src/data/streams/superembed-bridge.js.
+window.addEventListener('message', (e) => {
+  if (e.source !== window) return;
+  const m = e.data;
+  if (!m || m.__sg !== true || m.dir !== 'req') return;
+  const reply = (resp) => window.postMessage({ __sg: true, dir: 'res', reqId: m.reqId, resp }, '*');
+  try {
+    chrome.runtime.sendMessage({ type: m.type, payload: m.payload }, (resp) => {
+      const err = chrome.runtime.lastError;
+      reply(err ? { ok: false, error: err.message } : (resp || null));
+    });
+  } catch (err) {
+    reply({ ok: false, error: String(err) });
+  }
+});
