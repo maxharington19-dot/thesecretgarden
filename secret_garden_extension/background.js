@@ -341,8 +341,8 @@ async function seFetchText(host, pathFilter, url, referer, init = {}) {
   return { text, finalUrl: res.url };
 }
 
-// Minimal server-list parser for a response.php page: ordered { server, serverId, dataId, quality }
-// rows. Mirrors site/src/data/streams/superembed-parse.js.
+// Minimal server-list parser for a response.php page: ordered { server, serverId, dataId } rows.
+// Mirrors site/src/data/streams/superembed-parse.js.
 function seParseServers(html) {
   const s = String(html == null ? "" : html);
   const out = [];
@@ -353,40 +353,9 @@ function seParseServers(html) {
     const serverId = (m[1].match(/data-server="(\d+)"/) || [])[1];
     const nameM = m[2].match(/server-image\s+server-([^"\s]+)/);
     if (!dataId || !serverId || !nameM) continue;
-    const qualM = m[2].match(/<span class="quality">([^<]*)<\/span>/);
-    out.push({ server: nameM[1], serverId, dataId, quality: qualM ? qualM[1].trim() : null });
+    out.push({ server: nameM[1], serverId, dataId });
   }
   return out;
-}
-
-// Rank for "most reliable server at the highest quality." Mirrors superembed-rank.js.
-function seReliabilityTier(server) {
-  const s = String(server || "");
-  if (/^vipstream/i.test(s)) return 0; // native HLS, same CDN as the primary source
-  if (/streamwish/i.test(s)) return 1; // third-party HLS
-  if (/mixdrop/i.test(s)) return 2;    // Referer-gated progressive MP4
-  return 99;                           // abyss/koko/doodstream: no playable manifest
-}
-function seQualityScore(q) {
-  const s = String(q || "").toLowerCase();
-  if (/2160|\b4k\b|uhd/.test(s)) return 2160;
-  if (/1440|\b2k\b/.test(s)) return 1440;
-  if (/1080|fhd/.test(s)) return 1080;
-  if (/multi|auto|adaptive/.test(s)) return 1081;
-  if (/720|\bhd\b/.test(s)) return 720;
-  if (/480/.test(s)) return 480;
-  if (/360/.test(s)) return 360;
-  return 0;
-}
-function seRankServers(servers) {
-  return (servers || [])
-    .map((r, i) => ({ r, i }))
-    .filter(({ r }) => r && r.serverId && r.dataId && seReliabilityTier(r.server) !== 99)
-    .sort((a, b) =>
-      seReliabilityTier(a.r.server) - seReliabilityTier(b.r.server) ||
-      seQualityScore(b.r.quality) - seQualityScore(a.r.quality) ||
-      a.i - b.i)
-    .map(({ r }) => r);
 }
 
 // One VIP server: playvideo.php (Referer = play host root) -> vipstream_vfx.php (Referer = the
@@ -448,19 +417,23 @@ async function resolveSuperembedTitle({ entryHost, playHost, tmdbId, imdbId }) {
     const servers = seParseServers(resp.text);
     if (!servers.length) return { needsArming: true };
 
-    // 3. Resolve in ranked order — most reliable tier first, highest quality within a tier — and
-    //    keep the FIRST server that returns a real URL (so we stop at the best reachable one, not
-    //    the first listed). VIP resolves via vipstream_vfx; file-hosts via their embed unpackers.
-    for (const r of seRankServers(servers)) {
-      const vip = /^vipstream/i.test(r.server);
+    // 3. VIP servers first (native HLS, best quality), then file-hosts (streamwish HLS, mixdrop
+    //    MP4). The switcher NAME is unreliable, so file-host dispatch is by embed host, not name.
+    //    First server that resolves to a real URL wins (stop early to stay fast).
+    const withIds = servers.filter((r) => r.serverId && r.dataId);
+    const vip = withIds.filter((r) => /^vipstream/i.test(r.server));
+    const rest = withIds.filter((r) => !/^vipstream/i.test(r.server));
+    for (const r of vip) {
       let hit = null;
-      try {
-        hit = vip
-          ? await seResolveVipServer(playBase, pHostname, r.dataId, r.serverId, playToken)
-          : await seResolveFilehostServer(playBase, pHostname, r.dataId, r.serverId, playToken);
-      } catch (e) { hit = null; }
-      if (hit && hit.manifestUrl)
-        return { manifestUrl: hit.manifestUrl, server: r.server, serverId: r.serverId, quality: r.quality || null, kind: hit.kind || "hls" };
+      try { hit = await seResolveVipServer(playBase, pHostname, r.dataId, r.serverId, playToken); }
+      catch (e) { hit = null; }
+      if (hit && hit.manifestUrl) return { manifestUrl: hit.manifestUrl, server: r.server, serverId: r.serverId, kind: hit.kind || "hls" };
+    }
+    for (const r of rest) {
+      let hit = null;
+      try { hit = await seResolveFilehostServer(playBase, pHostname, r.dataId, r.serverId, playToken); }
+      catch (e) { hit = null; }
+      if (hit && hit.manifestUrl) return { manifestUrl: hit.manifestUrl, server: r.server, serverId: r.serverId, kind: hit.kind };
     }
     return null;
   } catch (e) {
