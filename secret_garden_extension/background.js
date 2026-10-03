@@ -470,6 +470,116 @@ async function resolveSuperembedTitle({ entryHost, playHost, tmdbId, imdbId }) {
   }
 }
 
+// ---------- VidSrc/VidEm live resolve (the endpoint37 chain) ----------
+//
+// Mirrors site/src/data/streams/sources/endpoint37.js (resolveHost). The whole chain sends NO
+// CORS header and is Referer-gated, so page JS cannot run it (true on Safari too); only this
+// worker can (host permissions bypass CORS, a session DNR rule sets the Referer). All GET:
+//   1. GET <host>/embed/<type>/<id>[/s/e]  (Referer = the multiembed entry) -> HTML w/ `var Q{...,t}`.
+//      `t` is a JWT-style token minted per load; keep it whole (incl. the `.signature`).
+//   2. GET <host><apiBase>api.php?a=sources&...&t=<Q.t>  (Referer = the embed URL) -> {servers:[{ref}]}.
+//   3. POLL GET ...api.php?a=race&refs=<all>&t  -> {cands:[{ref,url,type}]}. a=race 502s until a
+//      server is live, then returns the live one (url = "/_stream?id=..."). Poll ~6x, ~1.2s apart;
+//      still nothing -> this host has no live server right now, return null (graceful).
+//   4. GET ...api.php?a=play&ref=<winner>&t&fresh=1  -> {url} (re-sign; cand.url is the fallback).
+//   5. manifestUrl = absolute: "/_stream?..." -> "https://<host>/_stream?...". Segments relay via
+//      relay*.videm.xyz. The parser + URL builders below hand-mirror endpoint37.js's pure helpers.
+
+const VID_HOSTS = [
+  { host: "vidsrc.buzz", apiBase: "/pl/" },
+  { host: "videm.xyz", apiBase: "/" },
+];
+const VID_EMBED_REFERER = "https://multiembed.mov/"; // mirrors endpoint37.js (EP.endpoint6)
+const VID_RACE_TRIES = 6;
+const VID_RACE_GAP_MS = 1200;
+const vidSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function vidParseQ(html) {
+  const m = String(html || "").match(/var\s+Q\s*=\s*(\{.*?\});/s);
+  if (!m) return null;
+  try { return JSON.parse(m[1]); } catch (e) { return null; }
+}
+function vidEmbedUrl(host, req) {
+  const tv = req && req.type === "tv";
+  const id = req && (req.tmdbId != null ? req.tmdbId : req.imdbId);
+  const path = tv ? `tv/${id}/${req.season || 1}/${req.episode || 1}` : `movie/${id}`;
+  return `https://${host}/embed/${path}`;
+}
+function vidSourcesUrl(host, apiBase, Q) {
+  const qs = `type=${Q.type}&id=${encodeURIComponent(Q.id)}&s=${Q.s}&e=${Q.e}&t=${encodeURIComponent(Q.t)}`;
+  return `https://${host}${apiBase}api.php?a=sources&${qs}`;
+}
+function vidRaceUrl(host, apiBase, refs, token) {
+  const r = refs.map(encodeURIComponent).join(",");
+  return `https://${host}${apiBase}api.php?a=race&refs=${r}&t=${encodeURIComponent(token)}`;
+}
+function vidPlayUrl(host, apiBase, ref, token, fresh) {
+  return `https://${host}${apiBase}api.php?a=play&ref=${encodeURIComponent(ref)}&t=${encodeURIComponent(token)}${fresh ? "&fresh=1" : ""}`;
+}
+function vidAbsolute(host, url) {
+  if (!url) return null;
+  return url.startsWith("/") ? `https://${host}${url}` : url;
+}
+
+// Run the chain against one host. Uses seFetchText (credentials:"include", session-DNR Referer).
+async function resolveVidsrcHost(host, apiBase, req) {
+  const embed = vidEmbedUrl(host, req);
+  // 1. embed page -> Q.t. Referer = the multiembed entry (mirrors the proven injected chain).
+  let html;
+  try { html = (await seFetchText(host, "/embed/", embed, VID_EMBED_REFERER)).text; } catch (e) { return null; }
+  const Q = vidParseQ(html);
+  if (!Q || !Q.t) return null;
+
+  // 2. a=sources. Referer = the embed URL from here on.
+  let sj;
+  try { sj = JSON.parse((await seFetchText(host, "api.php", vidSourcesUrl(host, apiBase, Q), embed)).text); }
+  catch (e) { return null; }
+  if (!sj || sj.status !== "ok" || !Array.isArray(sj.servers)) return null;
+  const servers = sj.servers.filter((s) => s && s.ref); // keep platform order, drop ref-less rows
+  if (!servers.length) return null;
+
+  // 3. POLL a=race until a server is live (direct a=play 502s on the rest).
+  const refs = servers.map((s) => s.ref);
+  let cand = null;
+  for (let i = 0; i < VID_RACE_TRIES && !cand; i++) {
+    if (i) await vidSleep(VID_RACE_GAP_MS);
+    try {
+      const rj = JSON.parse((await seFetchText(host, "api.php", vidRaceUrl(host, apiBase, refs, Q.t), embed)).text);
+      cand = (rj && Array.isArray(rj.cands) ? rj.cands : []).find((c) => c && (c.url || c.ref)) || null;
+    } catch (e) { /* 502 while no server live yet: poll again */ }
+  }
+  if (!cand) return null; // no live server on this host right now
+
+  // 4. a=play&fresh=1 re-signs a current url; fall back to the race cand's own url.
+  let url = cand.url;
+  try {
+    const pj = JSON.parse((await seFetchText(host, "api.php", vidPlayUrl(host, apiBase, cand.ref, Q.t, true), embed)).text);
+    if (pj && (pj.url || pj.file)) url = pj.url || pj.file;
+  } catch (e) { /* keep the race cand url */ }
+
+  const manifestUrl = vidAbsolute(host, url);
+  if (!manifestUrl) return null;
+  const won = servers.find((s) => s.ref === cand.ref);
+  return { manifestUrl, server: (won && won.name) || null, kind: cand.type || "hls", refererGate: embed };
+}
+
+// On-demand, any-title: try each host in platform order; first live master wins. The page supplies
+// only ids. Returns { manifestUrl, server, kind, refererGate } | null.
+async function resolveVidsrcTitle({ tmdbId, imdbId, type, season, episode } = {}) {
+  if (tmdbId == null && !imdbId) return null;
+  const req = { tmdbId, imdbId, type, season, episode };
+  try {
+    for (const { host, apiBase } of VID_HOSTS) {
+      let out = null;
+      try { out = await resolveVidsrcHost(host, apiBase, req); } catch (e) { out = null; }
+      if (out && out.manifestUrl) return out;
+    }
+    return null;
+  } finally {
+    await seClearReferer();
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === "sg-resolve") {
     resolveSuperembed(msg.payload || {})
@@ -479,6 +589,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (msg && msg.type === "sg-resolve-title") {
     resolveSuperembedTitle(msg.payload || {})
+      .then((result) => sendResponse({ ok: !!(result && result.manifestUrl), result }))
+      .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true; // async response
+  }
+  if (msg && msg.type === "sg-resolve-vidsrc") {
+    resolveVidsrcTitle(msg.payload || {})
       .then((result) => sendResponse({ ok: !!(result && result.manifestUrl), result }))
       .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
     return true; // async response

@@ -1,7 +1,7 @@
 {
-  "version": 8,
+  "version": 9,
   "updated": "2026-10-03",
-  "note": "Remote behavior config. vidsrcme CDN: SETTING Origin+Referer to cloudorchestranova.com returns 200 (origin-probe 2026-08-09). SuperEmbed CDN (hutro433fil.com): SETTING Referer to https://streamingnow.mov/ returns 200 from any IP (server-side replay test 2026-09-05); its rule is priority 2 so it overrides the generic *.m3u8* rule (priority 1) on SuperEmbed manifests. We SET rather than remove headers because Chrome DNR reliably supports set (remove can be rejected, silently disabling the rule set). Works on every extension version >= 2.0.0, so no reinstall needed for rule changes. | 2026-10-03: added VIP CDN hosts jerso441ceg.com (rotated vipstream-A) and x5.iknowthatyourfatheris.gay (vipstream-R/F/Y) to the streamingnow.mov SET-Referer rule; both probe-verified 200+#EXTM3U with Referer https://streamingnow.mov/ (origin was 404/403 without it).",
+  "note": "Remote behavior config. vidsrcme CDN: SETTING Origin+Referer to cloudorchestranova.com returns 200 (origin-probe 2026-08-09). SuperEmbed CDN (hutro433fil.com): SETTING Referer to https://streamingnow.mov/ returns 200 from any IP (server-side replay test 2026-09-05); its rule is priority 2 so it overrides the generic *.m3u8* rule (priority 1) on SuperEmbed manifests. We SET rather than remove headers because Chrome DNR reliably supports set (remove can be rejected, silently disabling the rule set). Works on every extension version >= 2.0.0, so no reinstall needed for rule changes. | 2026-10-03: added VIP CDN hosts jerso441ceg.com (rotated vipstream-A) and x5.iknowthatyourfatheris.gay (vipstream-R/F/Y) to the streamingnow.mov SET-Referer rule; both probe-verified 200+#EXTM3U with Referer https://streamingnow.mov/ (origin was 404/403 without it). | 2026-10-03 v9: added VidSrc/VidEm (endpoint37) rules so hls.js's PAGE fetch of the manifest + segments carries a Referer and gets ACAO:* (auto-added). vidsrc.buzz/_stream + videm.xyz/_stream get host-root Referer; relay\\d*\\.videm\\.xyz segments get https://videm.xyz/. REFERER-UNKNOWN FLAG: the capture used the per-title EMBED url as the Referer on /_stream + relay, which a static DNR rule cannot template; host-root Referer is the best static guess and NEEDS ONE ON-DEVICE VERIFICATION. If segments 403, the fix is to template the embed-url Referer (likely via a session rule set from the worker, like seSetReferer).",
   "popupBlockPatterns": [
     "vidsrcme",
     "vidsrc",
@@ -13,6 +13,42 @@
     "vidlink"
   ],
   "headerRules": [
+    {
+      "_comment": "VidSrc/VidEm (endpoint37). REFERER UNKNOWN: capture used the per-title embed URL (not templatable in a static DNR rule); host-root Referer is the best static guess. NEEDS ONE ON-DEVICE VERIFICATION — if /_stream or segments 403, template the embed-url Referer from the worker.",
+      "requestDomains": [
+        "vidsrc.buzz"
+      ],
+      "referer": "https://vidsrc.buzz/",
+      "resourceTypes": [
+        "media",
+        "xmlhttprequest",
+        "other"
+      ],
+      "priority": 2
+    },
+    {
+      "requestDomains": [
+        "videm.xyz"
+      ],
+      "referer": "https://videm.xyz/",
+      "resourceTypes": [
+        "media",
+        "xmlhttprequest",
+        "other"
+      ],
+      "priority": 2
+    },
+    {
+      "_comment": "VidEm segment relay nodes (relay1.videm.xyz, relay2.videm.xyz, ...). Same host-root Referer guess; same on-device verification caveat.",
+      "regexFilter": "relay\\d*\\.videm\\.xyz",
+      "referer": "https://videm.xyz/",
+      "resourceTypes": [
+        "media",
+        "xmlhttprequest",
+        "other"
+      ],
+      "priority": 2
+    },
     {
       "requestDomains": [
         "hutro433fil.com",
