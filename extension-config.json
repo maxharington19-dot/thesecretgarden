@@ -1,7 +1,7 @@
 {
-  "version": 7,
-  "updated": "2026-09-12",
-  "note": "Remote behavior config. vidsrcme CDN: SETTING Origin+Referer to cloudorchestranova.com returns 200 (origin-probe 2026-08-09). SuperEmbed CDN (hutro433fil.com): SETTING Referer to https://streamingnow.mov/ returns 200 from any IP (server-side replay test 2026-09-05); its rule is priority 2 so it overrides the generic *.m3u8* rule (priority 1) on SuperEmbed manifests. We SET rather than remove headers because Chrome DNR reliably supports set (remove can be rejected, silently disabling the rule set). Works on every extension version >= 2.0.0, so no reinstall needed for rule changes.",
+  "version": 8,
+  "updated": "2026-10-03",
+  "note": "Remote behavior config. vidsrcme CDN: SETTING Origin+Referer to cloudorchestranova.com returns 200 (origin-probe 2026-08-09). SuperEmbed CDN (hutro433fil.com): SETTING Referer to https://streamingnow.mov/ returns 200 from any IP (server-side replay test 2026-09-05); its rule is priority 2 so it overrides the generic *.m3u8* rule (priority 1) on SuperEmbed manifests. We SET rather than remove headers because Chrome DNR reliably supports set (remove can be rejected, silently disabling the rule set). Works on every extension version >= 2.0.0, so no reinstall needed for rule changes. | 2026-10-03: added VIP CDN hosts jerso441ceg.com (rotated vipstream-A) and x5.iknowthatyourfatheris.gay (vipstream-R/F/Y) to the streamingnow.mov SET-Referer rule; both probe-verified 200+#EXTM3U with Referer https://streamingnow.mov/ (origin was 404/403 without it).",
   "popupBlockPatterns": [
     "vidsrcme",
     "vidsrc",
@@ -14,36 +14,62 @@
   ],
   "headerRules": [
     {
-      "requestDomains": ["hutro433fil.com", "gufin435siv.com"],
+      "requestDomains": [
+        "hutro433fil.com",
+        "gufin435siv.com",
+        "jerso441ceg.com",
+        "iknowthatyourfatheris.gay"
+      ],
       "origin": "https://streamingnow.mov",
       "referer": "https://streamingnow.mov/",
-      "resourceTypes": ["media", "xmlhttprequest", "other"],
+      "resourceTypes": [
+        "media",
+        "xmlhttprequest",
+        "other"
+      ],
       "priority": 2
     },
     {
-      "requestDomains": ["niramirus.com", "streamwish.to"],
+      "requestDomains": [
+        "niramirus.com",
+        "streamwish.to"
+      ],
       "origin": "https://streamingnow.mov",
       "referer": "https://streamingnow.mov/",
-      "resourceTypes": ["xmlhttprequest", "other"],
+      "resourceTypes": [
+        "xmlhttprequest",
+        "other"
+      ],
       "priority": 2
     },
     {
       "urlFilter": "*.m3u8*",
       "origin": "https://cloudorchestranova.com",
       "referer": "https://cloudorchestranova.com/",
-      "resourceTypes": ["media", "xmlhttprequest", "other"]
+      "resourceTypes": [
+        "media",
+        "xmlhttprequest",
+        "other"
+      ]
     },
     {
       "urlFilter": "*/content/*",
       "origin": "https://cloudorchestranova.com",
       "referer": "https://cloudorchestranova.com/",
-      "resourceTypes": ["media", "xmlhttprequest", "other"]
+      "resourceTypes": [
+        "media",
+        "xmlhttprequest",
+        "other"
+      ]
     },
     {
       "urlFilter": "*/generate.php*",
       "origin": "https://cloudorchestranova.com",
       "referer": "https://cloudorchestranova.com/",
-      "resourceTypes": ["xmlhttprequest", "other"]
+      "resourceTypes": [
+        "xmlhttprequest",
+        "other"
+      ]
     }
   ]
 }
